@@ -27,11 +27,6 @@ jobs:
 
       - name: Use Go Actions Cache
         uses: ./.github/actions/go-actions-cache
-        with:
-          cache-key: ${{ github.sha }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          actions-url: ${{ github.event.repository.html_url }}
-
       - name: Build project (first time)
         run: go build ./...
 
