@@ -17,6 +17,6 @@ runs:
       run: |
         echo "PATH=$(pwd)/_bin:$PATH" >> $GITHUB_ENV
         echo "GOCACHEPROG=go-actions-cache" >> $GITHUB_ENV
-        echo "GOEXPERIMENT=gocacheprog,${GOEXPERIMENT}" >> $GITHUB_ENV
+        echo "GOEXPERIMENT=cacheprog,${GOEXPERIMENT}" >> $GITHUB_ENV
     - uses: crazy-max/ghaction-github-runtime@v3
       name: Expose github actions info for go-actions-cache
