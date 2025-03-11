@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.23, 1.24]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '${{ matrix.go-version }}'
+
+      - name: Use Go Actions Cache
+        uses: ./.github/actions/go-actions-cache
+        with:
+          cache-key: ${{ github.sha }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          actions-url: ${{ github.event.repository.html_url }}
+
+      - name: Build project (first time)
+        run: go build ./...
+
+      - name: Build project (second time)
+        run: go build ./...

@@ -1,0 +1,22 @@
+name: 'Go Actions Cache'
+description: 'A GitHub Action to use a custom GOCACHEPROG'
+inputs:
+  cache-key:
+    description: 'The key to use for the cache'
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v2
+    - shell: bash
+      name: 'Build Go Actions Cache Binary'
+      run: |
+        docker build --output=_bin -t go-actions-cache .
+    - shell: bash
+      name: 'Set Go Actions Cache Environment Variables'
+      run: |
+        echo "PATH=$(pwd)/_bin:$PATH" >> $GITHUB_ENV
+        echo "GOCACHEPROG=go-actions-cache" >> $GITHUB_ENV
+        echo "GOEXPERIMENT=gocacheprog,${GOEXPERIMENT}" >> $GITHUB_ENV
+    - uses: crazy-max/ghaction-github-runtime@v3
+      name: Expose github actions info for go-actions-cache
