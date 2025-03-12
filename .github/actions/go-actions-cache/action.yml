@@ -3,7 +3,7 @@ description: 'A GitHub Action to use a custom GOCACHEPROG'
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - shell: bash
       name: 'Build Go Actions Cache Binary'
       run: |
