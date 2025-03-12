@@ -14,7 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [1.23, 1.24]
+        go-version: [1.24]
+        version: ["0.0.1", "0"]
 
     steps:
       - name: Checkout repository
@@ -27,6 +28,8 @@ jobs:
 
       - name: Use Go Actions Cache
         uses: ./.github/actions/go-actions-cache
+        with:
+          version: '${{ matrix.version }}'
       - name: Build project (first time)
         run: go build ./...
 
