@@ -1,0 +1,61 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+        contents: write
+        issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Setup cosign for signing
+        uses: sigstore/cosign-installer@v3.8.1
+      - name: Build binary
+        run: |
+          mkdir -p _output/x86_64
+          GOARCH=amd64 CGO_ENABLED=0 go build -o _output/x86_64/go-actions-cache .
+
+          mkdir -p _output/aarch64
+          GOARCH=arm64 CGO_ENABLED=0 go build -o _output/aarch64/go-actions-cache .
+
+      - name: Sign
+        run: |
+          cd _output
+
+          cosign sign-blob --yes \
+            --output-signature x86_64/go-actions-cache.sig \
+            --output-certificate x86_64/go-actions-cache.pem \
+            --bundle x86_64/go-actions-cache.bundle \
+            x86_64/go-actions-cache
+
+          cosign sign-blob --yes \
+            --output-signature aarch64/go-actions-cache.sig \
+            --output-certificate aarch64/go-actions-cache.pem \
+            --bundle aarch64/go-actions-cache.bundle \
+            aarch64/go-actions-cache
+
+      - name: Tar artifacts
+        run: |
+          cd _output
+          tar -C x86_64 -czvf go-actions-cache-x86_64.tar.gz .
+          tar -C aarch64 -czvf go-actions-cache-aarch64.tar.gz .
+
+      - name: Upload Release Asset
+        run: |
+            echo "${{ github.token }}" | gh auth login --with-token
+            cd _output
+            gh release upload ${{ github.ref_name }} ./go-actions-cache-x86_64.tar.gz --clobber
+            gh release upload ${{ github.ref_name }} ./go-actions-cache-aarch64.tar.gz --clobber
