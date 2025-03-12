@@ -1,13 +1,33 @@
 name: 'Go Actions Cache'
 description: 'A GitHub Action to use a custom GOCACHEPROG'
+inputs:
+  version:
+    description: 'The version of the Go Actions Cache to use'
+    default: 0.0.1
+  github-token:
+    description: 'GitHub token used to download the Go Actions Cache binary'
+    required: true
+    default: ${{ github.token }}
+
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v4
     - shell: bash
-      name: 'Build Go Actions Cache Binary'
+      name: Download Go Actions Cache
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
-        docker build --output=_bin .
+        if command -v actions-cache-go &> /dev/null; then
+          echo "actions-cache-go already installed"
+          exit 0
+        fi
+
+        gh release download v${{ inputs.version }} --repo ${{ github.repository }} --pattern "go-actions-cache-$(uname -m).tar.gz"
+
+        tar -xvf go-actions-cache-$(uname -m).tar.gz
+
+        mkdir -p _bin
+        mv go-actions-cache _bin/actions-cache-go
     - shell: bash
       name: 'Set Go Actions Cache Environment Variables'
       run: |
