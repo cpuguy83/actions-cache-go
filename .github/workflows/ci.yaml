@@ -34,7 +34,6 @@ jobs:
         uses: ./.github/actions/go-actions-cache
         with:
           version: '${{ matrix.version }}'
-          debug: true
       - name: Build project (first time)
         run: go build ./...
         env:
