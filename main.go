@@ -160,6 +160,9 @@ func (h *handler) initKeys(ctx context.Context) error {
 			return
 		}
 
+		slog.Debug("Initializing cache keys")
+		defer slog.Debug("Initialized cache keys")
+
 		var list []actionscache.CacheKey
 		list, err = h.restAPI.ListKeys(ctx, h.prefix, "")
 		if err != nil {
