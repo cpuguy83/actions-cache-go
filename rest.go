@@ -14,7 +14,7 @@ import (
 
 const (
 	apiURL           = "https://api.github.com"
-	perPage          = 100
+	perPage          = 1000
 	defaultUserAgent = "go-actions-cache/1.0"
 )
 
