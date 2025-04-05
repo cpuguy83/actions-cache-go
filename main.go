@@ -159,23 +159,21 @@ func (h *handler) initKeys(ctx context.Context) error {
 			return
 		}
 
-		var keys map[string]struct{}
-		keys, err = h.client.AllKeys(ctx, h.restAPI, h.prefix)
-		h.keys = keys
-
+		var list []actionscache.CacheKey
+		list, err = h.restAPI.ListKeys(ctx, h.prefix, "")
 		if err != nil {
-			slog.Error("error getting remote cache keys", "error", err)
+			return
 		}
 
-		if slog.Default().Handler().Enabled(ctx, slog.LevelDebug) {
-			for k := range keys {
+		if len(list) > 0 {
+			h.keys = make(map[string]struct{}, len(list))
+			for _, k := range list {
 				slog.Debug("Found remote cache keys", "key", k)
-			}
-			if len(keys) == 0 {
-				slog.Debug("No remote cache keys found")
+				h.keys[k.Key] = struct{}{}
 			}
 		}
 	})
+
 	return err
 }
 
