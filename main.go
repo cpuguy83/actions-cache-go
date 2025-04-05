@@ -218,16 +218,6 @@ type getRet struct {
 func (h *handler) handleGet(ctx context.Context, actionID string) (outputID, diskPath string, _ error) {
 	actionID = h.prefix + actionID
 
-	if !h.exists(ctx, actionID) {
-		// Key does not exist in the remote cache
-		// Check if we have this locally
-		id, path, err := h.local.Get(ctx, actionID)
-		if err != nil {
-			return "", "", err
-		}
-		return id, path, nil
-	}
-
 	v, err, _ := h.flightGet.Do(actionID, func() (interface{}, error) {
 		id, path, err := h.local.Get(ctx, actionID)
 		if err != nil {
@@ -235,6 +225,11 @@ func (h *handler) handleGet(ctx context.Context, actionID string) (outputID, dis
 		}
 		if id != "" {
 			return &getRet{id, path}, nil
+		}
+
+		if !h.exists(ctx, actionID) {
+			// Don't bother making a network call if the key doesn't exist
+			return nil, nil
 		}
 
 		entry, err := h.client.Load(ctx, actionID)
