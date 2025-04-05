@@ -140,7 +140,8 @@ type handler struct {
 	local   *cachedir.Dir
 	prefix  string
 
-	flight singleflight.Group
+	flightGet singleflight.Group
+	flightPut singleflight.Group
 
 	keysOnce sync.Once
 	keys     map[string]struct{}
@@ -202,7 +203,7 @@ func (h *handler) handleGet(ctx context.Context, actionID string) (outputID, dis
 		return id, path, nil
 	}
 
-	v, err, _ := h.flight.Do(actionID, func() (interface{}, error) {
+	v, err, _ := h.flightGet.Do(actionID, func() (interface{}, error) {
 		id, path, err := h.local.Get(ctx, actionID)
 		if err != nil {
 			return nil, err
@@ -216,8 +217,11 @@ func (h *handler) handleGet(ctx context.Context, actionID string) (outputID, dis
 			return nil, fmt.Errorf("error loading cache key %q: %w", actionID, err)
 		}
 		if entry == nil {
+			slog.Debug("cache key not found", "actionID", actionID)
 			return nil, nil
 		}
+
+		slog.Info("cache key found", "actionID", actionID)
 
 		remote := entry.Download(ctx)
 		defer remote.Close()
@@ -274,7 +278,7 @@ func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath s
 	go func() {
 		defer f.Close()
 
-		h.flight.Do(req.ActionID, func() (interface{}, error) {
+		h.flightPut.Do(req.ActionID, func() (interface{}, error) {
 			defer h.wg.Done()
 
 			blob := &sectionReaderCloser{io.NewSectionReader(f, 0, req.Size), f}
