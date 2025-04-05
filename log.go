@@ -67,8 +67,7 @@ func (h *GitHubActionsHandler) Handle(ctx context.Context, r slog.Record) error 
 		return nil
 	}
 
-	h.base.Handle(ctx, r)
-	return nil
+	return h.base.Handle(ctx, r)
 }
 
 // WithAttrs returns a new handler with the given attributes.
