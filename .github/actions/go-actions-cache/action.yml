@@ -8,6 +8,9 @@ inputs:
     description: 'GitHub token used to download the Go Actions Cache binary'
     required: true
     default: ${{ github.token }}
+  prefix:
+    description: A prefix to add to cache keys to more easily identify them
+    default: 'actions-cache-go'
 
 runs:
   using: composite
@@ -45,5 +48,9 @@ runs:
           echo "GOEXPERIMENT=cacheprog,${GOEXPERIMENT}" >> $GITHUB_ENV
         fi
         echo "GOEXPERIMENT=cacheprog,${GOEXPERIMENT}" >> $GITHUB_ENV
+
+        if [ -n "${{ inputs.prefix }}" ]; then
+          echo "ACTIONS_CACHE_GO_PREFIX=${{ inputs.prefix }}" >> $GITHUB_ENV
+        fi
     - uses: crazy-max/ghaction-github-runtime@v3
       name: Expose github actions info for go-actions-cache

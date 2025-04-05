@@ -40,10 +40,14 @@ func main() {
 }
 
 const (
-	actionsResultURL = "ACTIONS_RESULTS_URL"
-	actionsCacheURL  = "ACTIONS_CACHE_URL"
-	actionsCacheV2   = "ACTIONS_CACHE_SERVICE_V2"
-	actionsToken     = "ACTIONS_RUNTIME_TOKEN"
+	actionsResultURL            = "ACTIONS_RESULTS_URL"
+	actionsCacheURL             = "ACTIONS_CACHE_URL"
+	actionsCacheV2              = "ACTIONS_CACHE_SERVICE_V2"
+	actionsToken                = "ACTIONS_RUNTIME_TOKEN"
+	actionsCacheGoPrefix        = "ACTIONS_CACHE_GO_PREFIX"
+	restAPIToken                = "GITHUB_TOKEN"
+	githubRepo                  = "GITHUB_REPOSITORY"
+	defaultActionsCacheGoPrefix = "actions-cache-go-"
 )
 
 func do(ctx context.Context, cacheDirPath string, in io.Reader, out io.Writer) error {
@@ -71,6 +75,11 @@ func do(ctx context.Context, cacheDirPath string, in io.Reader, out io.Writer) e
 		}
 	}
 
+	prefix := defaultActionsCacheGoPrefix
+	if v, ok := os.LookupEnv(actionsCacheGoPrefix); ok {
+		prefix = v
+	}
+
 	if url == "" {
 		return fmt.Errorf("missing %q or %q environment variable", actionsCacheURL, actionsResultURL)
 	}
@@ -85,118 +94,193 @@ func do(ctx context.Context, cacheDirPath string, in io.Reader, out io.Writer) e
 		return fmt.Errorf("error creating cache directory: %w", err)
 	}
 
-	var wg sync.WaitGroup
+	var restAPI *actionscache.RestAPI
+	token := os.Getenv(restAPIToken)
+	repo := os.Getenv(githubRepo)
+	if token != "" && repo != "" {
+		restAPI, err = actionscache.NewRestAPI("", os.Getenv(restAPIToken), actionscache.Opt{})
+		if err != nil {
+			return fmt.Errorf("error creating rest api client: %w", err)
+		}
+	} else {
+		if token == "" {
+			slog.Info("Missing GITHUB_TOKEN environment variable, skipping rest api client. Performance may be degraded.")
+		}
+		if repo == "" {
+			slog.Info("missing GITHUB_REPOSITORY environment variable, skipping rest api client. Performance may be degraded.")
+		}
+	}
 
-	var flight singleflight.Group
+	handler := &handler{
+		client:  client,
+		restAPI: restAPI,
+		local:   cacheDir,
+		prefix:  prefix,
+	}
+
 	srv := &gocache.Server{
-		Get: handleGet(client, cacheDir, &flight),
-		Put: handlePut(client, cacheDir, &wg, &flight),
-		Close: func(context.Context) error {
-			wg.Wait()
-			return nil
-		},
+		Get:   handler.handleGet,
+		Put:   handler.handlePut,
+		Close: handler.Close,
 	}
 
 	defer srv.Close(ctx)
 	return srv.Run(ctx, in, out)
 }
 
-type getHandlerFunc func(ctx context.Context, actionID string) (outputID, diskPath string, _ error)
+type handler struct {
+	client  *actionscache.Cache
+	restAPI *actionscache.RestAPI
+	local   *cachedir.Dir
+	prefix  string
 
-type putHandlerFunc func(ctx context.Context, req gocache.Object) (diskPath string, _ error)
+	flight singleflight.Group
 
-func handleGet(client *actionscache.Cache, local *cachedir.Dir, flight *singleflight.Group) getHandlerFunc {
-	type ret struct {
-		outputID, diskPath string
-	}
+	keysOnce sync.Once
+	keys     map[string]struct{}
 
-	return func(ctx context.Context, actionID string) (outputID, diskPath string, _ error) {
-		v, err, _ := flight.Do(actionID, func() (interface{}, error) {
-			id, path, err := local.Get(ctx, actionID)
-			if err != nil {
-				return nil, err
-			}
-			if id != "" {
-				return &ret{id, path}, nil
-			}
-
-			entry, err := client.Load(ctx, actionID)
-			if err != nil {
-				return nil, fmt.Errorf("error loading cache key %q: %w", actionID, err)
-			}
-			if entry == nil {
-				return nil, nil
-			}
-
-			remote := entry.Download(ctx)
-			defer remote.Close()
-
-			obj := gocache.Object{
-				ActionID: actionID,
-				Body:     io.NewSectionReader(remote, 0, math.MaxInt64),
-				OutputID: actionID,
-			}
-			p, err := local.Put(ctx, obj)
-			if err != nil {
-				return nil, fmt.Errorf("error storing in local cache: %w", err)
-			}
-			return &ret{id, p}, nil
-		})
-
-		if err != nil || v == nil {
-			return "", "", err
-		}
-
-		vv := v.(*ret)
-		return vv.outputID, vv.diskPath, nil
-	}
+	wg sync.WaitGroup
 }
 
-func handlePut(client *actionscache.Cache, local *cachedir.Dir, wg *sync.WaitGroup, flight *singleflight.Group) putHandlerFunc {
-	return func(ctx context.Context, req gocache.Object) (diskPath string, _ error) {
-		p, err := local.Put(ctx, gocache.Object{
-			ActionID: req.ActionID,
-			Body:     req.Body,
-			Size:     req.Size,
-			OutputID: req.OutputID,
-		})
-		if err != nil {
-			return "", fmt.Errorf("error storing in local cache: %w", err)
+// initKeys initializes the keys map with all keys from the remote cache.
+// This is done only once and is cached for the lifetime of the handler.
+// This makes it so we don't need to make a network call for every key check.
+func (h *handler) initKeys(ctx context.Context) error {
+	var err error
+	h.keysOnce.Do(func() {
+		if h.restAPI == nil {
+			return
 		}
 
-		f, err := os.Open(p)
-		if err != nil {
-			return "", fmt.Errorf("error opening local cache file: %w", err)
-		}
-		wg.Add(1)
+		var keys map[string]struct{}
+		keys, err = h.client.AllKeys(ctx, h.restAPI, h.prefix)
 
-		go func() {
-			defer f.Close()
+		h.keys = keys
+	})
+	return err
+}
 
-			flight.Do(req.ActionID, func() (interface{}, error) {
-				defer wg.Done()
+func (h *handler) Close(ctx context.Context) error {
+	h.wg.Wait()
+	return nil
+}
 
-				blob := &sectionReaderCloser{io.NewSectionReader(f, 0, req.Size), f}
-				if err := client.Save(ctx, req.ActionID, blob); err != nil {
-					var he actionscache.HTTPError
-
-					var attrs []slog.Attr
-					attrs = append(attrs, slog.String("actionID", req.ActionID))
-					if errors.As(err, &he) {
-						if he.StatusCode == http.StatusConflict {
-							// Cache already exists
-							return nil, nil
-						}
-						attrs = append(attrs, slog.Int("statusCode", he.StatusCode))
-					}
-					slog.LogAttrs(ctx, slog.LevelError, err.Error(), attrs...)
-				}
-				return nil, nil
-			})
-		}()
-
-		return p, nil
+func (h *handler) exists(ctx context.Context, key string) (bool, error) {
+	if err := h.initKeys(ctx); err != nil {
+		return false, err
 	}
+
+	_, ok := h.keys[key]
+	return ok, nil
+}
+
+type getRet struct {
+	outputID string
+	diskPath string
+}
+
+func (h *handler) handleGet(ctx context.Context, actionID string) (outputID, diskPath string, _ error) {
+	actionID = h.prefix + actionID
+
+	exists, err := h.exists(ctx, actionID)
+	if err != nil {
+		return "", "", fmt.Errorf("error checking if cache key exists: %w", err)
+	}
+	if !exists {
+		// Key does not exist in the remote cache
+		// Check if we have this locally
+		id, path, err := h.local.Get(ctx, actionID)
+		if err != nil {
+			return "", "", err
+		}
+		return id, path, nil
+	}
+
+	v, err, _ := h.flight.Do(actionID, func() (interface{}, error) {
+		id, path, err := h.local.Get(ctx, actionID)
+		if err != nil {
+			return nil, err
+		}
+		if id != "" {
+			return &getRet{id, path}, nil
+		}
+
+		entry, err := h.client.Load(ctx, actionID)
+		if err != nil {
+			return nil, fmt.Errorf("error loading cache key %q: %w", actionID, err)
+		}
+		if entry == nil {
+			return nil, nil
+		}
+
+		remote := entry.Download(ctx)
+		defer remote.Close()
+
+		obj := gocache.Object{
+			ActionID: actionID,
+			Body:     io.NewSectionReader(remote, 0, math.MaxInt64),
+			OutputID: actionID,
+		}
+		p, err := h.local.Put(ctx, obj)
+		if err != nil {
+			return nil, fmt.Errorf("error storing in local cache: %w", err)
+		}
+		return &getRet{id, p}, nil
+	})
+
+	if err != nil || v == nil {
+		return "", "", err
+	}
+
+	vv := v.(*getRet)
+	return vv.outputID, vv.diskPath, nil
+}
+
+func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath string, _ error) {
+	req.ActionID = h.prefix + req.ActionID
+
+	p, err := h.local.Put(ctx, gocache.Object{
+		ActionID: req.ActionID,
+		Body:     req.Body,
+		Size:     req.Size,
+		OutputID: req.OutputID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("error storing in local cache: %w", err)
+	}
+
+	f, err := os.Open(p)
+	if err != nil {
+		return "", fmt.Errorf("error opening local cache file: %w", err)
+	}
+	h.wg.Add(1)
+
+	go func() {
+		defer f.Close()
+
+		h.flight.Do(req.ActionID, func() (interface{}, error) {
+			defer h.wg.Done()
+
+			blob := &sectionReaderCloser{io.NewSectionReader(f, 0, req.Size), f}
+			if err := h.client.Save(ctx, req.ActionID, blob); err != nil {
+				var he actionscache.HTTPError
+
+				var attrs []slog.Attr
+				attrs = append(attrs, slog.String("actionID", req.ActionID))
+				if errors.As(err, &he) {
+					if he.StatusCode == http.StatusConflict {
+						// Cache already exists
+						return nil, nil
+					}
+					attrs = append(attrs, slog.Int("statusCode", he.StatusCode))
+				}
+				slog.LogAttrs(ctx, slog.LevelError, err.Error(), attrs...)
+			}
+			return nil, nil
+		})
+	}()
+
+	return p, nil
 }
 
 type sectionReaderCloser struct {

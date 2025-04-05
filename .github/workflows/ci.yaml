@@ -32,6 +32,10 @@ jobs:
           version: '${{ matrix.version }}'
       - name: Build project (first time)
         run: go build ./...
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build project (second time)
         run: go build ./...
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
