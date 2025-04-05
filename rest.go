@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"iter"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -74,7 +73,6 @@ func (r *RestAPI) ListKeys(ctx context.Context, prefix, ref string) iter.Seq2[[]
 				}
 			}
 
-			slog.Debug("listKeysPage", "page", page, "total", total, "keys", len(keys), "prefix", prefix, "ref", ref)
 			if !yield(keys, nil) {
 				return
 			}

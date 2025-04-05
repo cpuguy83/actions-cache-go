@@ -8,11 +8,11 @@ on:
     branches:
       - main
 
+permissions:
+  actions: read
+
 jobs:
   build:
-    permissions:
-      contents: read
-      actions: read
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -38,9 +38,9 @@ jobs:
       - name: Build project (first time)
         run: go build ./...
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Build project (second time)
         run: go build ./...
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
