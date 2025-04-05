@@ -24,18 +24,20 @@ runs:
           exit 0
         fi
 
+        dir="$(mktemp -d)"
+
         if [ "${{inputs.version }}" = "0" ]; then
-          docker buildx build --output=_bin .
+          docker buildx build --output="${dir}" .
         else
           gh release download v${{ inputs.version }} --repo ${{ github.repository }} --pattern "go-actions-cache-$(uname -m).tar.gz"
           tar -xvf go-actions-cache-$(uname -m).tar.gz
-          mkdir -p _bin
-          mv go-actions-cache _bin/actions-cache-go
+          mv go-actions-cache "${dir}/actions-cache-go"
         fi
+
+        echo "PATH=${dir}:$PATH" >> $GITHUB_ENV
     - shell: bash
       name: 'Set Go Actions Cache Environment Variables'
       run: |
-        echo "PATH=$(pwd)/_bin:$PATH" >> $GITHUB_ENV
         echo "GOCACHEPROG=actions-cache-go" >> $GITHUB_ENV
         if [ -z "${GOEXPERIMENT}" ]; then
           echo "GOEXPERIMENT=cacheprog" >> $GITHUB_ENV
