@@ -201,9 +201,17 @@ func (h *handler) exists(ctx context.Context, key string) bool {
 			}
 			h.keys[k.Key] = struct{}{}
 		}
-		h.mu.Unlock()
 
 		if ok {
+			h.mu.Unlock()
+			break
+		}
+
+		// Check the map again in case of concurrent iteration
+		_, ok = h.keys[key]
+		h.mu.Unlock()
+		if ok {
+			h.mu.Unlock()
 			break
 		}
 	}
