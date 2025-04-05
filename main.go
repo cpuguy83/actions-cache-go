@@ -167,7 +167,7 @@ func (h *handler) Close(ctx context.Context) error {
 
 func (h *handler) exists(ctx context.Context, key string) (bool, error) {
 	if err := h.initKeys(ctx); err != nil {
-		return false, err
+		return false, fmt.Errorf("error initializing cache keys: %w", err)
 	}
 
 	_, ok := h.keys[key]
