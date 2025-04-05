@@ -161,8 +161,20 @@ func (h *handler) initKeys(ctx context.Context) error {
 
 		var keys map[string]struct{}
 		keys, err = h.client.AllKeys(ctx, h.restAPI, h.prefix)
-
 		h.keys = keys
+
+		if err != nil {
+			slog.Error("error getting remote cache keys", "error", err)
+		}
+
+		if slog.Default().Handler().Enabled(ctx, slog.LevelDebug) {
+			for k := range keys {
+				slog.Debug("Found remote cache keys", "key", k)
+			}
+			if len(keys) == 0 {
+				slog.Debug("No remote cache keys found")
+			}
+		}
 	})
 	return err
 }
@@ -288,7 +300,7 @@ func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath s
 				var attrs []slog.Attr
 				attrs = append(attrs, slog.String("actionID", req.ActionID))
 				if errors.As(err, &he) {
-					if he.StatusCode == http.StatusConflict || he.StatusCode == http.StatusBadRequest {
+					if he.StatusCode == http.StatusConflict {
 						// Cache already exists
 						return nil, nil
 					}
