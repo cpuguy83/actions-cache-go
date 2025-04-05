@@ -7,6 +7,9 @@ inputs:
   prefix:
     description: A prefix to add to cache keys to more easily identify them
     default: 'actions-cache-go-'
+  debug:
+    description: 'Enable debug mode'
+    default: 'false'
 
 runs:
   using: composite
@@ -47,6 +50,10 @@ runs:
 
         if [ -n "${{ inputs.prefix }}" ]; then
           echo "ACTIONS_CACHE_GO_PREFIX=${{ inputs.prefix }}" >> $GITHUB_ENV
+        fi
+
+        if [ "${{ inputs.debug }}" = "true" ]; then
+          echo "ACTIONS_CACHE_GO_DEBUG=true" >> $GITHUB_ENV
         fi
     - uses: crazy-max/ghaction-github-runtime@v3
       name: Expose github actions info for go-actions-cache

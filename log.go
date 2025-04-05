@@ -15,11 +15,16 @@ type GitHubActionsHandler struct {
 	out   io.Writer
 
 	attrs map[string]slog.Value
+	base  slog.Handler
 }
 
 // NewGitHubActionsHandler creates a new GitHubActionsHandler with the specified log level.
 func NewGitHubActionsHandler(level slog.Level, outStream io.Writer) *GitHubActionsHandler {
-	return &GitHubActionsHandler{level: level, out: outStream}
+	return &GitHubActionsHandler{
+		level: level,
+		out:   outStream,
+		base:  slog.Default().Handler(),
+	}
 }
 
 // Enabled reports whether the handler is enabled for the given level.
@@ -53,12 +58,16 @@ func (h *GitHubActionsHandler) Handle(ctx context.Context, r slog.Record) error 
 		})
 	}
 
-	fmt.Fprintf(h.out, "::%s::%s (%s)\n",
-		annotationType,
-		r.Message,
-		strings.Join(attrs, ", "),
-	)
+	if annotationType != "" {
+		fmt.Fprintf(h.out, "::%s::%s (%s)\n",
+			annotationType,
+			r.Message,
+			strings.Join(attrs, ", "),
+		)
+		return nil
+	}
 
+	h.base.Handle(ctx, r)
 	return nil
 }
 

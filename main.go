@@ -24,7 +24,13 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	slog.SetDefault(slog.New(NewGitHubActionsHandler(slog.LevelInfo, os.Stderr)))
+	level := slog.LevelInfo
+	if v := os.Getenv("ACTIONS_CACHE_GO_DEBUG"); v != "" {
+		strconv.ParseBool(v)
+		level = slog.LevelDebug
+	}
+
+	slog.SetDefault(slog.New(NewGitHubActionsHandler(level, os.Stderr)))
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -278,7 +284,7 @@ func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath s
 				var attrs []slog.Attr
 				attrs = append(attrs, slog.String("actionID", req.ActionID))
 				if errors.As(err, &he) {
-					if he.StatusCode == http.StatusConflict {
+					if he.StatusCode == http.StatusConflict || he.StatusCode == http.StatusBadRequest {
 						// Cache already exists
 						return nil, nil
 					}
@@ -286,6 +292,8 @@ func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath s
 				}
 				attrs = append(attrs, slog.String("error", err.Error()))
 				slog.LogAttrs(ctx, slog.LevelError, "error saving remote cache", attrs...)
+			} else {
+				slog.Debug("saved remote cache", "actionID", req.ActionID)
 			}
 			return nil, nil
 		})
