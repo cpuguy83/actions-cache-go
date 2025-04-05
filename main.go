@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"iter"
 	"log/slog"
 	"math"
 	"net/http"
@@ -146,7 +147,10 @@ type handler struct {
 	flightPut singleflight.Group
 
 	keysOnce sync.Once
-	keys     map[string]struct{}
+	keysIter iter.Seq2[[]actionscache.CacheKey, error]
+
+	mu   sync.Mutex
+	keys map[string]struct{}
 
 	wg sync.WaitGroup
 }
@@ -157,27 +161,10 @@ type handler struct {
 func (h *handler) initKeys(ctx context.Context) {
 	h.keysOnce.Do(func() {
 		if h.restAPI == nil {
+			h.keysIter = func(yield func([]actionscache.CacheKey, error) bool) {}
 			return
 		}
-
-		slog.Debug("Initializing cache keys")
-		defer slog.Debug("Initialized cache keys")
-
-		for keys, err := range h.restAPI.ListKeys(ctx, h.prefix, "") {
-			if err != nil {
-				slog.Error("error listing keys", "error", err)
-				return
-			}
-
-			if h.keys == nil {
-				h.keys = make(map[string]struct{}, len(keys))
-			}
-
-			for _, key := range keys {
-				slog.Debug("found cache key", "key", key.Key)
-				h.keys[key.Key] = struct{}{}
-			}
-		}
+		h.keysIter = h.restAPI.ListKeys(ctx, h.prefix, "")
 	})
 }
 
@@ -186,11 +173,41 @@ func (h *handler) Close(ctx context.Context) error {
 	return nil
 }
 
-func (h *handler) exists(ctx context.Context, key string) (bool, error) {
+func (h *handler) exists(ctx context.Context, key string) bool {
 	h.initKeys(ctx)
 
+	h.mu.Lock()
 	_, ok := h.keys[key]
-	return ok, nil
+	if ok {
+		return true
+	}
+	h.mu.Unlock()
+
+	for keys, err := range h.keysIter {
+		if err != nil {
+			slog.Error("error listing keys", "error", err)
+			return false
+		}
+
+		h.mu.Lock()
+		for _, k := range keys {
+			if k.Key == key {
+				ok = true
+			}
+
+			if h.keys == nil {
+				h.keys = make(map[string]struct{}, len(keys))
+			}
+			h.keys[k.Key] = struct{}{}
+		}
+		h.mu.Unlock()
+
+		if ok {
+			break
+		}
+	}
+
+	return ok
 }
 
 type getRet struct {
@@ -201,11 +218,7 @@ type getRet struct {
 func (h *handler) handleGet(ctx context.Context, actionID string) (outputID, diskPath string, _ error) {
 	actionID = h.prefix + actionID
 
-	exists, err := h.exists(ctx, actionID)
-	if err != nil {
-		return "", "", fmt.Errorf("error checking if cache key exists: %w", err)
-	}
-	if !exists {
+	if !h.exists(ctx, actionID) {
 		// Key does not exist in the remote cache
 		// Check if we have this locally
 		id, path, err := h.local.Get(ctx, actionID)
@@ -276,23 +289,20 @@ func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath s
 		return "", fmt.Errorf("error opening local cache file: %w", err)
 	}
 
-	exists, err := h.exists(ctx, req.ActionID)
-	if err != nil {
-		slog.Error("error checking if cache key exists", "error", err)
-	}
-	if exists {
-		// Don't need to upload if the cache already exists
-		return p, nil
-	}
-
 	h.wg.Add(1)
 
 	go func() {
-		defer f.Close()
+		defer func() {
+			h.wg.Done()
+			f.Close()
+		}()
+
+		if h.exists(ctx, req.ActionID) {
+			// Don't need to upload if the cache already exists
+			return
+		}
 
 		h.flightPut.Do(req.ActionID, func() (interface{}, error) {
-			defer h.wg.Done()
-
 			blob := &sectionReaderCloser{io.NewSectionReader(f, 0, req.Size), f}
 			if err := h.client.Save(ctx, req.ActionID, blob); err != nil {
 				var he actionscache.HTTPError

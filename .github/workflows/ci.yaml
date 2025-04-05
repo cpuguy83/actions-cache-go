@@ -35,10 +35,6 @@ jobs:
         with:
           version: '${{ matrix.version }}'
           debug: true
-      - name: Read cache keys
-        run: set -x; gh api -X GET /repos/${{ github.repository }}/actions/caches -f key=actions-cache-go-
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
       - name: Build project (first time)
         run: go build ./...
         env:
