@@ -6,7 +6,7 @@ inputs:
     default: '0.0.1'
   prefix:
     description: A prefix to add to cache keys to more easily identify them
-    default: 'actions-cache-go'
+    default: 'actions-cache-go-'
 
 runs:
   using: composite
