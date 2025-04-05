@@ -106,7 +106,7 @@ func do(ctx context.Context, cacheDirPath string, in io.Reader, out io.Writer) e
 	repo := os.Getenv(githubRepo)
 	if token != "" && repo != "" {
 		slog.Debug("creating rest api client", "repo", repo)
-		restAPI, err = NewRestAPI("", os.Getenv(restAPIToken), actionscache.Opt{})
+		restAPI, err = NewRestAPI(repo, os.Getenv(restAPIToken), actionscache.Opt{})
 		if err != nil {
 			return fmt.Errorf("error creating rest api client: %w", err)
 		}
