@@ -179,6 +179,7 @@ func (h *handler) exists(ctx context.Context, key string) bool {
 	h.mu.Lock()
 	_, ok := h.keys[key]
 	if ok {
+		h.mu.Unlock()
 		return true
 	}
 	h.mu.Unlock()
