@@ -177,12 +177,12 @@ func (h *handler) exists(ctx context.Context, key string) bool {
 	h.initKeys(ctx)
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	_, ok := h.keys[key]
 	if ok {
+		h.mu.Unlock()
 		return true
 	}
+	h.mu.Unlock()
 
 	for keys, err := range h.keysIter {
 		if err != nil {
@@ -190,6 +190,7 @@ func (h *handler) exists(ctx context.Context, key string) bool {
 			return false
 		}
 
+		h.mu.Lock()
 		for _, k := range keys {
 			if k.Key == key {
 				ok = true
@@ -200,6 +201,7 @@ func (h *handler) exists(ctx context.Context, key string) bool {
 			}
 			h.keys[k.Key] = struct{}{}
 		}
+		h.mu.Unlock()
 
 		if ok {
 			break
