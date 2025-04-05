@@ -253,6 +253,16 @@ func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath s
 	if err != nil {
 		return "", fmt.Errorf("error opening local cache file: %w", err)
 	}
+
+	exists, err := h.exists(ctx, req.ActionID)
+	if err != nil {
+		slog.Error("error checking if cache key exists", "error", err)
+	}
+	if exists {
+		// Don't need to upload if the cache already exists
+		return p, nil
+	}
+
 	h.wg.Add(1)
 
 	go func() {
