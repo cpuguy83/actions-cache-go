@@ -9,7 +9,7 @@ on:
       - main
 
 permissions:
-  actions: read
+  contents: read
 
 jobs:
   build:
