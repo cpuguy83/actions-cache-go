@@ -10,6 +10,9 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

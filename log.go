@@ -15,7 +15,6 @@ type GitHubActionsHandler struct {
 	out   io.Writer
 
 	attrs map[string]slog.Value
-	base  slog.Handler
 }
 
 // NewGitHubActionsHandler creates a new GitHubActionsHandler with the specified log level.
@@ -23,7 +22,6 @@ func NewGitHubActionsHandler(level slog.Level, outStream io.Writer) *GitHubActio
 	return &GitHubActionsHandler{
 		level: level,
 		out:   outStream,
-		base:  slog.Default().Handler(),
 	}
 }
 
@@ -40,8 +38,6 @@ func (h *GitHubActionsHandler) Handle(ctx context.Context, r slog.Record) error 
 		annotationType = "error"
 	case slog.LevelWarn:
 		annotationType = "warning"
-	default:
-		return h.base.Handle(ctx, r)
 	}
 
 	var attrs []string
@@ -58,13 +54,17 @@ func (h *GitHubActionsHandler) Handle(ctx context.Context, r slog.Record) error 
 		})
 	}
 
+	if annotationType == "" {
+		fmt.Fprintf(h.out, "%s: %s (%s)\n", r.Level, r.Message, strings.Join(attrs, ", "))
+		return nil
+	}
+
 	fmt.Fprintf(h.out, "::%s::%s (%s)\n",
 		annotationType,
 		r.Message,
 		strings.Join(attrs, ", "),
 	)
 	return nil
-
 }
 
 // WithAttrs returns a new handler with the given attributes.

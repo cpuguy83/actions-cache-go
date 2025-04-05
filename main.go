@@ -101,11 +101,11 @@ func do(ctx context.Context, cacheDirPath string, in io.Reader, out io.Writer) e
 		return fmt.Errorf("error creating cache directory: %w", err)
 	}
 
-	var restAPI *actionscache.RestAPI
+	var restAPI *RestAPI
 	token := os.Getenv(restAPIToken)
 	repo := os.Getenv(githubRepo)
 	if token != "" && repo != "" {
-		restAPI, err = actionscache.NewRestAPI("", os.Getenv(restAPIToken), actionscache.Opt{})
+		restAPI, err = NewRestAPI("", os.Getenv(restAPIToken), actionscache.Opt{})
 		if err != nil {
 			return fmt.Errorf("error creating rest api client: %w", err)
 		}
@@ -137,7 +137,7 @@ func do(ctx context.Context, cacheDirPath string, in io.Reader, out io.Writer) e
 
 type handler struct {
 	client  *actionscache.Cache
-	restAPI *actionscache.RestAPI
+	restAPI *RestAPI
 	local   *cachedir.Dir
 	prefix  string
 
@@ -153,8 +153,7 @@ type handler struct {
 // initKeys initializes the keys map with all keys from the remote cache.
 // This is done only once and is cached for the lifetime of the handler.
 // This makes it so we don't need to make a network call for every key check.
-func (h *handler) initKeys(ctx context.Context) error {
-	var err error
+func (h *handler) initKeys(ctx context.Context) {
 	h.keysOnce.Do(func() {
 		if h.restAPI == nil {
 			return
@@ -163,22 +162,22 @@ func (h *handler) initKeys(ctx context.Context) error {
 		slog.Debug("Initializing cache keys")
 		defer slog.Debug("Initialized cache keys")
 
-		var list []actionscache.CacheKey
-		list, err = h.restAPI.ListKeys(ctx, h.prefix, "")
-		if err != nil {
-			return
-		}
+		for keys, err := range h.restAPI.ListKeys(ctx, h.prefix, "") {
+			if err != nil {
+				slog.Error("error listing keys", "error", err)
+				return
+			}
 
-		if len(list) > 0 {
-			h.keys = make(map[string]struct{}, len(list))
-			for _, k := range list {
-				slog.Debug("Found remote cache keys", "key", k)
-				h.keys[k.Key] = struct{}{}
+			if h.keys == nil {
+				h.keys = make(map[string]struct{}, len(keys))
+			}
+
+			for _, key := range keys {
+				slog.Debug("found cache key", "key", key.Key)
+				h.keys[key.Key] = struct{}{}
 			}
 		}
 	})
-
-	return err
 }
 
 func (h *handler) Close(ctx context.Context) error {
@@ -187,9 +186,7 @@ func (h *handler) Close(ctx context.Context) error {
 }
 
 func (h *handler) exists(ctx context.Context, key string) (bool, error) {
-	if err := h.initKeys(ctx); err != nil {
-		return false, fmt.Errorf("error initializing cache keys: %w", err)
-	}
+	h.initKeys(ctx)
 
 	_, ok := h.keys[key]
 	return ok, nil
@@ -235,7 +232,7 @@ func (h *handler) handleGet(ctx context.Context, actionID string) (outputID, dis
 			return nil, nil
 		}
 
-		slog.Info("cache key found", "actionID", actionID)
+		slog.Debug("cache key found", "actionID", actionID)
 
 		remote := entry.Download(ctx)
 		defer remote.Close()
