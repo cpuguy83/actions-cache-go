@@ -4,10 +4,6 @@ inputs:
   version:
     description: 'The version of the Go Actions Cache to use'
     default: '0.0.1'
-  github-token:
-    description: 'GitHub token used to download the Go Actions Cache binary'
-    required: true
-    default: ${{ github.token }}
   prefix:
     description: A prefix to add to cache keys to more easily identify them
     default: 'actions-cache-go'
