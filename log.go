@@ -41,7 +41,7 @@ func (h *GitHubActionsHandler) Handle(ctx context.Context, r slog.Record) error 
 	case slog.LevelWarn:
 		annotationType = "warning"
 	default:
-		annotationType = "notice"
+		return h.base.Handle(ctx, r)
 	}
 
 	var attrs []string
@@ -58,16 +58,13 @@ func (h *GitHubActionsHandler) Handle(ctx context.Context, r slog.Record) error 
 		})
 	}
 
-	if annotationType != "" {
-		fmt.Fprintf(h.out, "::%s::%s (%s)\n",
-			annotationType,
-			r.Message,
-			strings.Join(attrs, ", "),
-		)
-		return nil
-	}
+	fmt.Fprintf(h.out, "::%s::%s (%s)\n",
+		annotationType,
+		r.Message,
+		strings.Join(attrs, ", "),
+	)
+	return nil
 
-	return h.base.Handle(ctx, r)
 }
 
 // WithAttrs returns a new handler with the given attributes.
