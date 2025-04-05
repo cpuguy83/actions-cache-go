@@ -274,7 +274,8 @@ func (h *handler) handlePut(ctx context.Context, req gocache.Object) (diskPath s
 					}
 					attrs = append(attrs, slog.Int("statusCode", he.StatusCode))
 				}
-				slog.LogAttrs(ctx, slog.LevelError, err.Error(), attrs...)
+				attrs = append(attrs, slog.String("error", err.Error()))
+				slog.LogAttrs(ctx, slog.LevelError, "error saving remote cache", attrs...)
 			}
 			return nil, nil
 		})

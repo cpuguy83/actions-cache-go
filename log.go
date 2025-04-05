@@ -39,33 +39,24 @@ func (h *GitHubActionsHandler) Handle(ctx context.Context, r slog.Record) error 
 		annotationType = "notice"
 	}
 
-	var attrs map[string]slog.Value
-	if len(h.attrs) > 0 {
-		attrs = maps.Clone(h.attrs)
-	}
-
-	r.Attrs(func(attr slog.Attr) bool {
-		if h.attrs == nil {
-			attrs = make(map[string]slog.Value, r.NumAttrs())
+	var attrs []string
+	numAttrs := r.NumAttrs() + len(h.attrs)
+	if numAttrs > 0 {
+		attrs = make([]string, 0, numAttrs)
+		for k, v := range h.attrs {
+			attrs = append(attrs, k+"="+v.String())
 		}
 
-		attrs[attr.Key] = attr.Value
-		return true
-	})
-
-	var attrSl []string
-	if len(attrs) > 0 {
-		attrSl = make([]string, 0, len(attrs))
-
-		for k, v := range attrs {
-			attrSl = append(attrSl, fmt.Sprintf("%s=%v", k, v))
-		}
+		r.Attrs(func(attr slog.Attr) bool {
+			attrs = append(attrs, attr.Key+"="+attr.Value.String())
+			return true
+		})
 	}
 
-	fmt.Fprintf(h.out, "::%s::%s %s\n",
+	fmt.Fprintf(h.out, "::%s::%s (%s)\n",
 		annotationType,
 		r.Message,
-		strings.Join(attrSl, ", "),
+		strings.Join(attrs, ", "),
 	)
 
 	return nil
