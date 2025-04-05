@@ -28,6 +28,7 @@ func main() {
 	if v := os.Getenv("ACTIONS_CACHE_GO_DEBUG"); v != "" {
 		strconv.ParseBool(v)
 		level = slog.LevelDebug
+		slog.SetLogLoggerLevel(level)
 	}
 
 	slog.SetDefault(slog.New(NewGitHubActionsHandler(level, os.Stderr)))
