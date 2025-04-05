@@ -16,7 +16,7 @@ runs:
     - shell: bash
       name: Download Go Actions Cache
       env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         if command -v actions-cache-go &> /dev/null; then
           echo "actions-cache-go already installed"
