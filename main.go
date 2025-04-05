@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"iter"
 	"log/slog"
 	"math"
 	"net/http"
@@ -127,6 +126,8 @@ func do(ctx context.Context, cacheDirPath string, in io.Reader, out io.Writer) e
 		prefix:  prefix,
 	}
 
+	go handler.initKeys(ctx)
+
 	srv := &gocache.Server{
 		Get:   handler.handleGet,
 		Put:   handler.handlePut,
@@ -147,10 +148,7 @@ type handler struct {
 	flightPut singleflight.Group
 
 	keysOnce sync.Once
-	keysIter iter.Seq2[[]actionscache.CacheKey, error]
-
-	mu   sync.Mutex
-	keys map[string]struct{}
+	keys     map[string]struct{}
 
 	wg sync.WaitGroup
 }
@@ -161,10 +159,22 @@ type handler struct {
 func (h *handler) initKeys(ctx context.Context) {
 	h.keysOnce.Do(func() {
 		if h.restAPI == nil {
-			h.keysIter = func(yield func([]actionscache.CacheKey, error) bool) {}
 			return
 		}
-		h.keysIter = h.restAPI.ListKeys(ctx, h.prefix, "")
+
+		for keys, err := range h.restAPI.ListKeys(ctx, h.prefix, "") {
+			if err != nil {
+				slog.Error("error listing keys", "error", err)
+				return
+			}
+
+			if h.keys == nil {
+				h.keys = make(map[string]struct{}, len(keys))
+			}
+			for _, k := range keys {
+				h.keys[k.Key] = struct{}{}
+			}
+		}
 	})
 }
 
@@ -175,47 +185,7 @@ func (h *handler) Close(ctx context.Context) error {
 
 func (h *handler) exists(ctx context.Context, key string) bool {
 	h.initKeys(ctx)
-
-	h.mu.Lock()
 	_, ok := h.keys[key]
-	if ok {
-		h.mu.Unlock()
-		return true
-	}
-	h.mu.Unlock()
-
-	for keys, err := range h.keysIter {
-		if err != nil {
-			slog.Error("error listing keys", "error", err)
-			return false
-		}
-
-		h.mu.Lock()
-		for _, k := range keys {
-			if k.Key == key {
-				ok = true
-			}
-
-			if h.keys == nil {
-				h.keys = make(map[string]struct{}, len(keys))
-			}
-			h.keys[k.Key] = struct{}{}
-		}
-
-		if ok {
-			h.mu.Unlock()
-			break
-		}
-
-		// Check the map again in case of concurrent iteration
-		_, ok = h.keys[key]
-		h.mu.Unlock()
-		if ok {
-			h.mu.Unlock()
-			break
-		}
-	}
-
 	return ok
 }
 
